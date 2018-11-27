@@ -1,9 +1,11 @@
 #####Bayesian Hierarchical Field Aware Factorization Machines#####
 library(MASS)
+library(Matrix)
 library(matrixStats)
 library(data.table)
 library(FAdist)
 library(bayesm)
+library(float)
 library(extraDistr)
 library(dplyr)
 library(ggplot2)
@@ -64,7 +66,7 @@ item <- 2000   #アイテム数
 tag <- 150   #タグ数
 pt <- rtpois(hh, rgamma(hh, 30.0, 0.25), a=1, b=Inf)   #購買接触数
 hhpt <- sum(pt)
-n <- rtpois(item, 0.75, a=0, b=Inf)   #タグ数
+n <- rtpois(item, 1.75, a=0, b=7)   #タグ数
 k <- 10   #基底数
 vec_k <- rep(1, k)
 
@@ -120,7 +122,8 @@ item_list <- list()
 for(j in 1:item){
   item_list[[j]] <- which(item_id==j)
 }
-item_data <- colSums(sparseMatrix(1:hhpt, item_id, x=rep(1, hhpt), dims=c(hhpt, item)))
+item_data <- sparseMatrix(1:hhpt, item_id, x=rep(1, hhpt), dims=c(hhpt, item))
+item_n <- colSums(item_data)
 
 ##タグを生成
 #パラメータの設定
@@ -140,11 +143,32 @@ for(j in 1:item){
     }
   }
   tag_id[item_list[[j]], 1:n[j]] <- matrix(tag_list[[j]], nrow=length(item_list[[j]]), ncol=n[j], byrow=T)
-  
 }
 tag_data <- sparseMatrix(matrix(rep(1:hhpt, max_n), nrow=hhpt, ncol=max_n)[tag_id!=0], tag_id[tag_id!=0], 
                          x=rep(1, sum(tag_id!=0)), dims=c(hhpt, tag))
+tag_id0 <- tag_id; tag_id0[tag_id0==0] <- tag + 1
+tag_n <- colSums(tag_data)
 
+
+#タグを縦持ちのIDを設定
+tag_vec <- as.numeric(tag_id)[as.numeric(tag_id) > 0]
+user_vec <- rep(user_id, max_n)[as.numeric(tag_id) > 0]
+f <- length(user_vec)
+v_dt <- sparseMatrix(rep(1:hhpt, max_n)[as.numeric(tag_id) > 0], 1:f, x=rep(1, f), dims=c(hhpt, f))
+
+#組み合わせを作成
+index_combine <- t(combn(1:max_n, m=2))
+combine_list <- list()
+combine_n <- rep(0, max(index_combine[, 1]))
+for(j in 1:max(index_combine[, 1])){
+  combine_list[[j]] <- index_combine[which(index_combine[, 1]==j), 2]
+  combine_n[j] <- length(combine_list[[j]])
+}
+
+#交差項のインデックスを作成
+index_n <- which(rowSums(tag_id > 0) >= 2)
+tag_n <- length(index_n)
+tag_dt <- sparseMatrix(rep(1:tag_n, max_n), 1:(tag_n*max_n), x=rep(1, tag_n*max_n), dims=c(tag_n, tag_n*max_n))
 
 
 ####応答変数を生成####
@@ -152,86 +176,97 @@ rp <- 0
 repeat {
   rp <- rp + 1
   print(rp)
-  ##階層モデルのパラメータを生成
-  ##ユーザーベースの階層モデルのパラメータ
+  
+  #モデルの標準偏差
+  Sigma <- 1
+  
+  ##ユーザーベースの特徴行列のパラメータ
   #分散共分散行列を設定
-  Cov_ut <- Cov_u <- covmatrix(k, corrM(k, -0.6, 0.8, 0.05, 0.2), 0.0025, 0.25)$covariance
+  Cov_ut1 <- Cov_u1 <- diag(runif(k, 0.01, 0.25))
+  Cov_ut2 <- Cov_u2 <- diag(runif(k, 0.01, 0.25))
   
   #回帰係数を設定
-  alpha_u <- matrix(0, nrow=ncol(u), ncol=k)
+  alpha_u1 <- alpha_u2 <- matrix(0, nrow=ncol(u), ncol=k)
   for(j in 1:ncol(u)){
     if(j==1){
-      alpha_u[j, ] <- runif(k, -1.3, -0.5)
+      alpha_u1[j, ] <- runif(k, -0.7, 0.2)
+      alpha_u2[j, ] <- runif(k, -0.7, 0.2)
     } else {
-      alpha_u[j, ] <- runif(k, -0.6, 0.7)
+      alpha_u1[j, ] <- runif(k, -0.6, 0.6)
+      alpha_u2[j, ] <- runif(k, -0.6, 0.6)
     }
   }
-  alpha_ut <- alpha_u
+  alpha_ut1 <- alpha_u1; alpha_ut2 <- alpha_u2
   
-  #多変量回帰モデルからユーザー個別の回帰パラメータを生成
-  theta_u <- theta_ut <- u %*% alpha_u + mvrnorm(hh, rep(0, k), Cov_u)   #テンソル分解のパラメータ
+  #多変量回帰モデルから特徴行列を生成
+  theta_u1 <- theta_ut1 <- u %*% alpha_u1 + mvrnorm(hh, rep(0, k), Cov_u1)   #アイテムとの交互作用特徴行列
+  theta_u2 <- theta_ut2 <- u %*% alpha_u2 + mvrnorm(hh, rep(0, k), Cov_u2)   #タグとの交互作用特徴行列
   
   
-  ##アイテムベースの階層モデルのパラメータ
+  ##アイテムベースの特徴行列のパラメータ
   #分散共分散行列を設定
-  Cov_vt <- Cov_v <- covmatrix(k, corrM(k, -0.6, 0.8, 0.05, 0.2), 0.025, 0.25)$covariance
+  Cov_vt <- Cov_v <- diag(runif(k, 0.01, 0.25))
   
   #回帰係数を設定
   alpha_v <- matrix(0, nrow=ncol(v), ncol=k)
   for(j in 1:ncol(v)){
     if(j==1){
-      alpha_v[j, ] <- runif(k, -1.2, -0.4)
+      alpha_v[j, ] <- runif(k, -0.7, 0.3)
     } else {
-      alpha_v[j, ] <- runif(k, -0.7, 0.8)
+      alpha_v[j, ] <- runif(k, -0.7, 0.7)
     }
   }
   alpha_vt <- alpha_v
   
-  #多変量回帰モデルからアイテム個別の回帰パラメータを生成
+  #多変量回帰モデルから特徴行列を生成
   theta_v <- theta_vt <- v %*% alpha_v + mvrnorm(item, rep(0, k), Cov_v)
   
   
-  ##時間ベースの階層モデルのパラメータ
-  alpha_t <- alpha_tt <- rep(-0.25, k)
-  Cov_t <- Cov_tt <- diag(0.25, k)
-  theta_t <- theta_tt <- mvrnorm(time, alpha_t, Cov_t)
+  ##タグベースの特徴行列のパラメータ
+  #分散共分散行列の設定
+  Cov_g1 <- Cov_gt1 <- diag(runif(k, 0.05, 0.4))
+  Cov_g2 <- Cov_gt2 <- diag(runif(k, 0.025, 0.3))
   
+  #多変量正規分布から特徴行列を生成
+  theta_g1 <- theta_gt1 <- mvrnorm(tag, rep(0, k), Cov_g1)
+  theta_g2 <- thtea_gt2 <- rbind(mvrnorm(tag, rep(0, k), Cov_g2), 0)
+  
+  
+  ##行列分解のパラメータを設定
+  #ユーザー、アイテム、タグの行列分解のパラメータ
+  UV <- as.numeric((theta_u1[user_id, ] * theta_v[item_id, ]) %*% vec_k)
+  UG <- as.numeric(v_dt %*% ((theta_u2[user_vec, ] * theta_g1[tag_vec, ]) %*% vec_k))
+  
+  #タグ間の行列分解のパラメータ
+  WH <- rep(0, hhpt)
+  for(j in 1:length(combine_n)){
+    W <- theta_g2[tag_id0[index_n, j], ]
+    H <- as.matrix(tag_dt[, 1:(tag_n*combine_n[j])] %*% theta_g2[tag_id0[index_n, combine_list[[j]]], ])
+    WH[index_n] <- WH[index_n] + as.numeric((W * H) %*% vec_k)
+  }
   
   ##正規分布から効用と購買ベクトルを生成
   #潜在効用を生成
-  WHC0 <- array(0, dim=c(hh, item, time))
-  for(j in 1:k){
-    WHC0 <- WHC0 + theta_u[, j] %o% t(theta_v)[j, ] %o% t(theta_t)[j, ]
-  }
-  #whc0 <- as.numeric((W0[user_id0, ] * t(H0)[item_id0, ] * t(C0)[time_id0, ]) %*% vec)   #こちらでもok
-  whc0 <- as.numeric(WHC0)   #テンソルをベクトルに変換
-  u_vec0 <- whc0 + rnorm(hh*item*time, 0, 1)   #誤差を生成
+  mu <- UV + UG + WH
+  U <- mu + rnorm(hhpt, 0, Sigma)
   
   #購買ベクトルに変換
-  y0 <- ifelse(u_vec0 > 0, 1, 0)
-  if(mean(y0) > 0.3 & mean(y0) < 0.4) break   #break条件
+  y <- ifelse(U > 0, 1, 0)
+  Prob <- pnorm(mu, 0, 1)
+
+  #break条件
+  print(mean(y))
+  if(mean(y) > 0.25 & mean(y) < 0.45) break   #break条件
 }
 
-##欠損ベクトルを生成
-#欠損確率を生成
-user_prob <- rbeta(hh, 10, 50)
-item_prob <- rbeta(item, 15, 55)
-time_prob <- rbeta(time, 60, 140)
-prob <- user_prob[user_id0]*item_id0[item_id0]*time_prob[time_id0]
-
-#ベルヌーイ分布から欠損ベクトルを生成
-z_vec <- rbinom(N0, 1, prob)
-N <- sum(z_vec)
-y <- y0[z_vec==1]; u_vec <- u_vec0[z_vec==1]; whc <- whc0[z_vec==1]
-hist(u_vec, breaks=25, col="grey", main="潜在的なスコア分布", xlab="スコア")
-
-#欠損ベクトルからidを再構成
-user_id <- user_id0[z_vec==1]
-item_id <- item_id0[z_vec==1]
-time_id <- time_id0[z_vec==1]
+#要約統計量
+mean(y)   #全体の購買確率
+as.numeric(tapply(y, user_id, mean))   #ユーザーごとの購買確率
+as.numeric(tapply(y, item_id, mean))   #アイテムごとの購買確率
+hist(Prob, breaks=25, col="grey", xlab="購買確率", main="購買確率の理論値")
 
 
-####マルコフ連鎖モンテカルロ法で階層ベイズテンソル分解を推定####
+####マルコフ連鎖モンテカルロ法でField Aware Factorization Machinesを推定####
 ##切断正規分布の乱数を発生させる関数
 rtnorm <- function(mu, sigma, a, b){
   FA <- pnorm(a, mu, sigma)
