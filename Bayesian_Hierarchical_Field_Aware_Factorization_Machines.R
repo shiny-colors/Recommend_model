@@ -64,11 +64,12 @@ covmatrix <- function(col, corM, lower, upper){
 hh <- 5000   #ユーザー数
 item <- 2000   #アイテム数
 tag <- 150   #タグ数
-pt <- rtpois(hh, rgamma(hh, 30.0, 0.25), a=1, b=Inf)   #購買接触数
+pt <- rtpois(hh, rgamma(hh, 37.5, 0.25), a=1, b=Inf)   #購買接触数
 hhpt <- sum(pt)
 n <- rtpois(item, 1.75, a=0, b=7)   #タグ数
 k <- 10   #基底数
 vec_k <- rep(1, k)
+
 
 #IDを設定
 user_id <- rep(1:hh, pt)
@@ -78,6 +79,18 @@ user_list <- list()
 for(i in 1:hh){
   user_list[[i]] <- which(user_id==i)
 }
+
+##素性ベクトルを生成
+k1 <- 2; k2 <- 3; k3 <- 4
+x1 <- matrix(runif(hhpt*k1, 0, 1), nrow=hhpt, ncol=k1)
+x2 <- matrix(0, nrow=hhpt, ncol=k2)
+for(j in 1:k2){
+  pr <- runif(1, 0.25, 0.55)
+  x2[, j] <- rbinom(hhpt, 1, pr)
+}
+x3 <- rmnom(hhpt, 1, runif(k3, 0.2, 1.25)); x3 <- x3[, -which.min(colSums(x3))]
+x <- cbind(1, x1, x2, x3)   #データを結合
+column <- ncol(x)
 
 ##階層モデルの説明変数を設定
 #ユーザーの説明変数
@@ -90,6 +103,7 @@ for(j in 1:k2){
 }
 u3 <- rmnom(hh, 1, runif(k3, 0.2, 1.25)); u3 <- u3[, -which.min(colSums(u3))]
 u <- cbind(1, u1, u2, u3)   #データを結合
+u_col <- ncol(u)
 
 #アイテムの説明変数
 k1 <- 2; k2 <- 3; k3 <- 4
@@ -101,6 +115,7 @@ for(j in 1:k2){
 }
 v3 <- rmnom(item, 1, runif(k3, 0.2, 1.25)); v3 <- v3[, -which.min(colSums(v3))]
 v <- cbind(1, v1, v2, v3)   #データを結合
+v_col <- ncol(v)
 
 
 ##アイテムの割当を生成
@@ -136,9 +151,9 @@ tag_list <- list()
 tag_id <- matrix(0, nrow=hhpt, ncol=max_n)
 for(j in 1:item){
   repeat { 
-    x <- as.numeric(rmnom(1, n[j], omega[z[j], ]))
-    if(max(x)==1){
-      tag_list[[j]] <- (x * 1:tag)[x > 0]
+    zeta <- as.numeric(rmnom(1, n[j], omega[z[j], ]))
+    if(max(zeta)==1){
+      tag_list[[j]] <- (zeta * 1:tag)[zeta > 0]
       break
     }
   }
@@ -177,8 +192,9 @@ repeat {
   rp <- rp + 1
   print(rp)
   
-  #モデルの標準偏差
-  Sigma <- 1
+  ##素性ベクトルの回帰パラメ－タ
+  beta <- betat <- c(-0.7, runif(ncol(x)-1, -1.25, 1.25))
+  Sigma <- Sigmat <- 1   #モデルの標準偏差
   
   ##ユーザーベースの特徴行列のパラメータ
   #分散共分散行列を設定
@@ -189,11 +205,11 @@ repeat {
   alpha_u1 <- alpha_u2 <- matrix(0, nrow=ncol(u), ncol=k)
   for(j in 1:ncol(u)){
     if(j==1){
-      alpha_u1[j, ] <- runif(k, -0.7, 0.2)
+      alpha_u1[j, ] <- runif(k, -0.8, 0.2)
       alpha_u2[j, ] <- runif(k, -0.7, 0.2)
     } else {
-      alpha_u1[j, ] <- runif(k, -0.6, 0.6)
-      alpha_u2[j, ] <- runif(k, -0.6, 0.6)
+      alpha_u1[j, ] <- runif(k, -0.7, 0.7)
+      alpha_u2[j, ] <- runif(k, -0.7, 0.7)
     }
   }
   alpha_ut1 <- alpha_u1; alpha_ut2 <- alpha_u2
@@ -211,9 +227,9 @@ repeat {
   alpha_v <- matrix(0, nrow=ncol(v), ncol=k)
   for(j in 1:ncol(v)){
     if(j==1){
-      alpha_v[j, ] <- runif(k, -0.7, 0.3)
+      alpha_v[j, ] <- runif(k, -0.8, 0.2)
     } else {
-      alpha_v[j, ] <- runif(k, -0.7, 0.7)
+      alpha_v[j, ] <- runif(k, -0.8, 0.8)
     }
   }
   alpha_vt <- alpha_v
@@ -224,12 +240,12 @@ repeat {
   
   ##タグベースの特徴行列のパラメータ
   #分散共分散行列の設定
-  Cov_g1 <- Cov_gt1 <- diag(runif(k, 0.05, 0.4))
-  Cov_g2 <- Cov_gt2 <- diag(runif(k, 0.025, 0.3))
+  Cov_g1 <- Cov_gt1 <- diag(runif(k, 0.01, 0.3))
+  Cov_g2 <- Cov_gt2 <- diag(runif(k, 0.01, 0.25))
   
   #多変量正規分布から特徴行列を生成
   theta_g1 <- theta_gt1 <- mvrnorm(tag, rep(0, k), Cov_g1)
-  theta_g2 <- thtea_gt2 <- rbind(mvrnorm(tag, rep(0, k), Cov_g2), 0)
+  theta_g2 <- theta_gt2 <- rbind(mvrnorm(tag, rep(0, k), Cov_g2), 0)
   
   
   ##行列分解のパラメータを設定
@@ -247,7 +263,7 @@ repeat {
   
   ##正規分布から効用と購買ベクトルを生成
   #潜在効用を生成
-  mu <- UV + UG + WH
+  mu <- mut <- as.numeric(x %*% beta) + UV + UG + WH
   U <- mu + rnorm(hhpt, 0, Sigma)
   
   #購買ベクトルに変換
@@ -256,7 +272,7 @@ repeat {
 
   #break条件
   print(mean(y))
-  if(mean(y) > 0.25 & mean(y) < 0.45) break   #break条件
+  if(mean(y) > 0.2 & mean(y) < 0.4) break   #break条件
 }
 
 #要約統計量
@@ -283,84 +299,134 @@ iter <- 0
 burnin <- 500/keep
 disp <- 10
 
-##インデックスを設定
-user_index <- item_index <- time_index <- list()
-ui_id <- ut_id <- iu_id <- it_id <- tu_id <- ti_id <- list()
+
+##データとインデックスを設定
+#ユーザーとアイテムのインデックスを設定
+uv_id1 <- uv_id2 <- ug_id1 <- list() 
 for(i in 1:hh){
-  user_index[[i]] <- which(user_id==i)
-  ui_id[[i]] <- item_id[user_index[[i]]]
-  ut_id[[i]] <- time_id[user_index[[i]]]
+  index <- user_list[[i]]
+  uv_id1[[i]] <- item_id[index]
+  ug_id1[[i]] <- tag_id[index, ]
 }
 for(j in 1:item){
-  item_index[[j]] <- which(item_id==j)
-  iu_id[[j]] <- user_id[item_index[[j]]]
-  it_id[[j]] <- time_id[item_index[[j]]]
+  index <- item_list[[j]]
+  uv_id2[[j]] <- user_id[index]
 }
-for(j in 1:time){
-  time_index[[j]] <- which(time_id==j)
-  tu_id[[j]] <- user_id[time_index[[j]]]
-  ti_id[[j]] <- item_id[time_index[[j]]]
+
+#タグのインデックスを設定
+tag_allocation <- list()
+for(i in 1:hh){
+  tag_no <- as.numeric((tag_id[user_list[[i]], ] > 0) * matrix(1:pt[i], nrow=pt[i], nco=max_n))
+  tag_allocation[[i]] <- sparseMatrix(tag_no[tag_no > 0], 1:sum(tag_no > 0),
+                                      x=rep(1, sum(tag_no > 0)), dims=c(pt[i], sum(tag_no > 0)))
 }
-vec <- rep(1, k)
-const1 <- hh / 2.0  #正規化定数
-const2 <- item / 2.0
+ug_id2 <- list()
+tag_list1 <- tag_list2 <- dt_list <- list()
+tag_n1 <- tag_n2 <- rep(0, tag)
+for(i in 1:tag){
+  index1 <- index2 <- c()
+  for(j in 1:max_n){
+    index1 <- c(index1, which(tag_id[, j]==i))
+    index2 <- c(index2, index_n[which(tag_id[index_n, j]==i)])
+  }
+  tag_list1[[i]] <- sort(index1)
+  tag_list2[[i]] <- sort(index2)
+  ug_id2[[i]] <- user_id[tag_list1[[i]]]
+  tag_n1[i] <- length(tag_list1[[i]])
+  tag_n2[i] <- length(tag_list2[[i]])
+  dt_list[[i]] <- sparseMatrix(rep(1:tag_n2[i], max_n), 1:(tag_n2[i]*max_n), x=rep(1, tag_n2[i]*max_n), 
+                               dims=c(tag_n2[i], tag_n2[i]*max_n))
+}
+
 
 ##事前分布の設定
+#素性ベクトルの事前分布
+alpha <- rep(0, column)
+inv_tau <- solve(diag(100, column))
+
 #ユーザーの階層モデルの事前分布
-Deltabar1 <- matrix(rep(0, ncol(u)*k), nrow=ncol(u), ncol=k)   #階層モデルの回帰係数の事前分布の分散
-ADelta1 <- 0.01 * diag(rep(1, ncol(u)))   #階層モデルの回帰係数の事前分布の分散
-nu1 <- k + 1   #逆ウィシャート分布の自由度
-V1 <- nu1 * diag(rep(1, k)) #逆ウィシャート分布のパラメータ
+Deltabar_u <- matrix(0, nrow=u_col, k) 
+ADelta_u <- 0.01 * diag(rep(1, u_col))
+nu1 <- k + 1 
+V1 <- nu1 * diag(rep(1, k))
 
 #アイテムの階層モデルの事前分布
-Deltabar2 <- matrix(rep(0, ncol(v)*k), nrow=ncol(v), ncol=k)   #階層モデルの回帰係数の事前分布の分散
-ADelta2 <- 0.01 * diag(rep(1, ncol(v)))   #階層モデルの回帰係数の事前分布の分散
-nu2 <- k + 1   #逆ウィシャート分布の自由度
-V2 <- nu2 * diag(rep(1, k)) #逆ウィシャート分布のパラメータ
+Deltabar_v <- matrix(0, nrow=v_col, k) 
+ADelta_v <- 0.01 * diag(rep(1, v_col))
+nu2 <- k + 1 
+V2 <- nu2 * diag(rep(1, k))
 
-#時間の階層モデルの事前分布
-Aelta <- rep(0, k)   #階層モデルの回帰係数の事前分布の分散
-ADelta3 <- 0.01 * diag(k)   #階層モデルの回帰係数の事前分布の分散
-nu3 <- k + 1   #逆ウィシャート分布の自由度
-V3 <- nu3 * diag(rep(1, k))   #逆ウィシャート分布のパラメータ
+#タグの階層モデルの事前分布
+nu3 <- k + 1
+V3 <- nu3 * diag(rep(1, k))
+
 
 ##パラメータの真値
-alpha_u <- alpha_ut; user_mu <- u %*% alpha_u
-alpha_v <- alpha_vt; item_mu <- v %*% alpha_v
-alpha_t <- alpha_tt
-Cov_u <- Cov_ut; inv_Cov1 <- solve(Cov_u)
-Cov_v <- Cov_vt; inv_Cov2 <- solve(Cov_v)
-Cov_t <- Cov_tt; inv_Cov3 <- solve(Cov_t)
-theta_u <- theta_ut
+#素性ベクトルの真値
+beta <- betat
+Sigma <- Sigmat
+
+#階層モデルの真値
+alpha_u <- cbind(alpha_ut1, alpha_ut2); u_mu <- u %*% alpha_u
+alpha_v <- alpha_vt; v_mu <- v %*% alpha_v
+Cov_u <- as.matrix(bdiag(list(Cov_ut1, Cov_ut2))); inv_Cov_u <- solve(Cov_u)
+Cov_v <- Cov_vt; inv_Cov_v <- solve(Cov_v)
+Cov_g1 <- Cov_gt1; Cov_g2 <- Cov_gt2; inv_Cov_g1 <- solve(Cov_g1); inv_Cov_g2 <- solve(Cov_g2)
+
+#特徴行列のパラメータの真値
+theta_u1 <- theta_ut1; theta_u2 <- theta_ut2
 theta_v <- theta_vt
-theta_t <- theta_tt
-sigma <- 1
+theta_g1 <- theta_gt1; theta_g2 <- theta_gt2
+
 
 ##パラメータの初期値
-#テンソル分解のパラメータ
-theta_u <- mvrnorm(hh, rep(0, k), 0.25 * diag(k))
-theta_v <- mvrnorm(item, rep(0, k), 0.25 * diag(k))
-theta_t <- mvrnorm(time, rep(0, k), 0.25 * diag(k))
-sigma <- 1
+#素性ベクトルの初期値
+beta <- rep(0, column)
+Sigma <- 1
 
-#階層モデルのパラメータ
-alpha_u <- matrix(0, nrow=ncol(u), ncol=k); user_mu <- u %*% alpha_u
-alpha_v <- matrix(0, nrow=ncol(v), ncol=k); item_mu <- v %*% alpha_v
-alpha_t <- rep(0, k)
-Cov_u <- diag(0.2, k); inv_Cov1 <- solve(Cov_u)
-Cov_v <- diag(0.2, k); inv_Cov2 <- solve(Cov_v)
-Cov_t <- diag(0.2, k); inv_Cov3 <- solve(Cov_t)
+#階層モデルの初期値
+alpha_u <- matrix(0, nrow=u_col, ncol=2*k); u_mu <- u %*% alpha_u
+alpha_v <- matrix(0, nrow=v_col, ncol=k); v_mu <- v %*% alpha_v
+Cov_u <- diag(rep(0.025, 2*k)); inv_Cov_u <- solve(Cov_u)
+Cov_v <- diag(rep(0.025, k)); inv_Cov_v <- solve(Cov_v)
+Cov_g1 <- Cov_g2 <- diag(rep(0.025, k)); inv_Cov_g1 <- solve(Cov_g1); inv_Cov_g2 <- solve(Cov_g2)
+
+#特徴行列のパラメータの初期値
+theta_u1 <- mvrnorm(hh, rep(0, k), Cov_u1)
+theta_u2 <- mvrnorm(hh, rep(0, k), Cov_u2)
+theta_v <- mvrnorm(item, rep(0, k), Cov_v)
+theta_g1 <- mvrnorm(tag, rep(0, k), Cov_g1)
+theta_g2 <- rbind(mvrnorm(tag, rep(0, k), Cov_g2), 0)
+
+
+##行列分解のパラメータを設定
+#ユーザー、アイテム、タグの行列分解のパラメータ
+UV <- as.numeric((theta_u1[user_id, ] * theta_v[item_id, ]) %*% vec_k)
+UG <- as.numeric(v_dt %*% ((theta_u2[user_vec, ] * theta_g1[tag_vec, ]) %*% vec_k))
+
+#タグ間の行列分解のパラメータ
+WH <- rep(0, hhpt)
+for(j in 1:length(combine_n)){
+  W <- theta_g2[tag_id0[index_n, j], ]
+  H <- as.matrix(tag_dt[, 1:(tag_n*combine_n[j])] %*% theta_g2[tag_id0[index_n, combine_list[[j]]], ])
+  WH[index_n] <- WH[index_n] + as.numeric((W * H) %*% vec_k)
+}
 
 ##サンプリング結果のパラメータの保存用配列
-THETA_U <- array(0, dim=c(hh, k, R/keep))
+BETA <- matrix(0, nrow=R/keep, ncol=column)
+THETA_U1 <- array(0, dim=c(hh, k, R/keep))
+THETA_U2 <- array(0, dim=c(hh, k, R/keep))
 THETA_V <- array(0, dim=c(item, k, R/keep))
-THETA_T <- array(0, dim=c(time, k, R/keep))
-ALPHA_U <- array(0, dim=c(ncol(u), k, R/keep))
-ALPHA_V <- array(0, dim=c(ncol(v), k, R/keep))
-ALPHA_T <- matrix(0, nrow=R/keep, ncol=k)
-COV_U <- array(0, dim=c(k, k, R/keep))
+THETA_G1 <- array(0, dim=c(tag, k, R/keep))
+THETA_G2 <- array(0, dim=c(tag, k, R/keep))
+ALPHA_U1 <- array(0, dim=c(u_col, k, R/keep))
+ALPHA_U2 <- array(0, dim=c(u_col, k, R/keep))
+ALPHA_V <- array(0, dim=c(v_col, k, R/keep))
+COV_U1 <- array(0, dim=c(k, k, R/keep))
+COV_U2 <- array(0, dim=c(k, k, R/keep))
 COV_V <- array(0, dim=c(k, k, R/keep))
-COV_T <- array(0, dim=c(k, k, R/keep))
+COV_G1 <- array(0, dim=c(k, k, R/keep))
+COV_G2 <- array(0, dim=c(k, k, R/keep))
 
 ##切断領域を定義
 index_y1 <- which(y==1)
@@ -369,58 +435,90 @@ a <- ifelse(y==0, -100, 0)
 b <- ifelse(y==1, 100, 0)
 
 ##対数尤度の基準値
+#1パラメータモデルの対数尤度
 prob <- mean(y)
 LLst <- sum(y*log(prob)) + sum((1-y)*log(1-prob))   #対数尤度
+
+#真値での対数尤度
+prob <- pnorm(mut)
+prob[prob==1] <- 0.999999; prob[prob==0] <- 0.000001
+LLbest <- sum(y*log(prob) + (1-y)*log(1-prob))
 
 
 ####ギブスサンプリングでパラメータをサンプリング####
 for(rp in 1:R){
   
   ##切断正規分布から潜在効用を生成
-  mu <- as.numeric((theta_u[user_id, ] * theta_v[item_id, ] * theta_t[time_id, ]) %*% vec)   #潜在効用の期待値
-  U <- rtnorm(mu, sigma, a, b)   #潜在効用を生成
+  mu <- as.numeric(x %*% beta) + UV + UG + WH   #潜在効用の期待値
+  U <- rtnorm(mu, Sigma, a, b)   #潜在効用を生成
   
-  ##テンソル分解の特徴行列のパラメータをサンプリング
-  ##ユーザー特徴行列をサンプリング
+  ##素性ベクトルのパラメータをサンプリング
+  #モデル誤差を設定
+  er <- U - UV - UG - WH
+  
+  #回帰ベクトルの事後分布のパラメータ
+  Xy <- t(x) %*% er
+  inv_XXV <- solve(t(x) %*% x + inv_tau)
+  mu_vec <- inv_XXV %*% (Xy + inv_tau %*% alpha)
+
+  #多変量正規分布からbetaをサンプリング
+  beta <- mvrnorm(1, mu_vec, inv_XXV)
+  beta_mu <- as.numeric(x %*% beta)
+  
+  ##ユーザーの特徴行列をサンプリング
+  #モデル誤差を設定
+  er <- U - beta_mu - WH
+  
   for(i in 1:hh){
-    #特徴ベクトルのパラメータ
-    X <- theta_v[ui_id[[i]], ] * theta_t[ut_id[[i]], ]
-    Xy <- t(X) %*% U[user_index[[i]]]
-    inv_XXV <- solve(t(X) %*% X + inv_Cov1)
-    beta_mu <- inv_XXV %*% (Xy + inv_Cov1 %*% user_mu[i, ])   #多変量正規分布の平均ベクトル
-    cov <- inv_XXV   #多変量正規分布の分散共分散行列
-    
-    #多変量正規分布からパラメータをサンプリング
-    theta_u[i, ] <- mvrnorm(1, beta_mu, cov)
+    #データの設定
+    dt1 <- theta_v[uv_id1[[i]], ]
+    dt2 <- tag_allocation[[i]] %*% theta_g1[ug_id1[[i]], ]
+    dt <- cbind(dt1, dt2)
+
+    #特徴行列の事後分布のパラメータ
+    Xy <- t(dt) %*% er[user_list[[i]]]
+    inv_XXV <- solve(t(dt) %*% dt + inv_Cov_u)
+    mu_vec <- inv_XXV %*% (Xy + inv_Cov_u %*% u_mu[i, ])
+
+    #多変量正規分布から特徴行列をサンプリング
+    theta_u <- as.numeric(mvrnorm(1, mu_vec, inv_XXV))
+    theta_u1[i, ] <- theta_u[1:k]; theta_u2[i, ] <- theta_u[(k+1):length(theta_u)]
   }
-  #theta_u <- theta_u / matrix(colSums(theta_u), nrow=hh, ncol=k, byrow=T) * const1
+  #行列分解のパラメータを更新
+  UG <- as.numeric(v_dt %*% ((theta_u2[user_vec, ] * theta_g1[tag_vec, ]) %*% vec_k))
+
   
-  ##アイテム特徴行列をサンプリング
+  ##アイテムの特徴行列をサンプリング
+  #モデル誤差を設定
+  er <- U - beta_mu - UG - WH
+
   for(j in 1:item){
-    #特徴ベクトルのパラメータ
-    X <- theta_u[iu_id[[j]], ] * theta_t[it_id[[j]], ]
-    Xy <- t(X) %*% U[item_index[[j]]]
-    inv_XXV <- solve(t(X) %*% X +inv_Cov2)
-    beta_mu <- inv_XXV %*% (Xy + inv_Cov2 %*% item_mu[j, ])   #多変量正規分布の平均ベクトル
-    cov <- inv_XXV   #多変量正規分布の分散共分散行列
+    #特徴行列の事後分布のパラメータ
+    dt <- theta_u1[uv_id2[[j]], ]
+    Xy <- t(dt) %*% er[item_list[[j]]]
+    inv_XXV <- solve(t(dt) %*% dt + inv_Cov_v) 
+    mu_vec <- inv_XXV %*% (Xy + inv_Cov_v %*% v_mu[j, ])
     
-    #多変量正規分布からパラメータをサンプリング
-    theta_v[j, ] <- mvrnorm(1, beta_mu, cov)
+    #多変量正規分布から特徴行列をサンプリング
+    theta_v[j, ] <- as.numeric(mvrnorm(1, mu_vec, inv_XXV))
   }
-  #theta_v <- theta_v / matrix(colSums(theta_v), nrow=item, ncol=k, byrow=T) * const2
+  #行列分解のパラメータを更新
+  UV <- as.numeric((theta_u1[user_id, ] * theta_v[item_id, ]) %*% vec_k)
   
-  ##時間の特徴行列をサンプリング
-  for(j in 1:time){
-    #特徴ベクトルのパラメータ
-    X <- theta_u[tu_id[[j]], ] * theta_v[ti_id[[j]], ]
-    Xy <- t(X) %*% U[time_index[[j]]]
-    inv_XXV <- solve(t(X) %*% X + inv_Cov3)
-    beta_mu <- inv_XXV %*% (Xy + inv_Cov3 %*% alpha_t)   #多変量正規分布の平均ベクトル
-    cov <- inv_XXV   #多変量正規分布の分散共分散行列
-    
-    #多変量正規分布からパラメータをサンプリング
-    theta_t[j, ] <- mvrnorm(1, beta_mu, cov)
-  }
+  
+  ##タグの特徴行列のパラメータをサンプリング
+  #モデル誤差を設定
+  er <- U - beta_mu - UV
+  
+  #データの設定
+  j <- 1
+  dt1 <- theta_u1[ug_id2[[j]], ]
+  
+  
+  dt1 <- theta_v[uv_id1[[i]], ]
+  dt2 <- tag_allocation[[i]] %*% theta_g1[wh_id1[[i]], ]
+  dt <- cbind(dt1, dt2)
+  
   
   
   ##階層モデルのパラメータをサンプリング
