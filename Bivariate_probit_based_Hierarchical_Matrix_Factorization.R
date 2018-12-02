@@ -261,7 +261,7 @@ V <- nu * diag(column*s)
 V1 <- nu * diag(k*s)
 V2 <- nu * diag(k)
 
-#モデルのの事前分布
+#モデルの事前分布
 m <- column + 1   #逆ウィシャート分布の自由度
 Rn <- m * diag(s)   #逆ウィシャート分布の自由度
 
