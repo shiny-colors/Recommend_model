@@ -193,9 +193,7 @@ dloglike_alpha <- function(alpha, beta, y, y_log, x, n, k){
   dlgamma <- (n*k)*(log(alpha) - digamma(alpha)) + sum(1 - y/lambda + log(y/lambda))   #形状パラメータの勾配ベクトル
   return(dlgamma)
 }
-sc1 <- hh*(log(alpha) - digamma(alpha)) + sum(1 - y/lambda + log(y/lambda))   #形状パラメータの勾配ベクトル
 
-digamma(15)
 
 ##アルゴリズムの設定
 R <- 5000
@@ -366,7 +364,6 @@ for(rp in 1:R){
   #独立MH法の対数尤度
   lognew <- loglike(alpha_u, betan, inv_tau, d, d_log, u)$Lho
   logold <- loglike(alpha_u, betad, inv_tau, d, d_log, u)$Lho 
-  
   
   #パラメータの採択を決定
   rand <- runif(1)   #一様分布から乱数を発生
