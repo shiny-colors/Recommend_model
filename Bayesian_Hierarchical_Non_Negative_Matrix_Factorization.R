@@ -97,8 +97,8 @@ repeat {
   lambda_v <- exp(v %*% alpha_v)
   
   #ガンマ分布の形状パラメータ
-  beta_u <- beta_ut <- rnorm(1, 1, 0.5)
-  beta_v <- beta_vt <- rnorm(1, 1, 0.5)
+  beta_u <- beta_ut <- abs(rnorm(1, 1, 0.5))
+  beta_v <- beta_vt <- abs(rnorm(1, 1, 0.5))
   
   #ガンマ分布から行列分解のパラメータを生成
   theta_u <- theta_ut <- matrix(rgamma(hh*k, as.numeric(lambda_u), beta_u), nrow=hh, ncol=k)
@@ -135,6 +135,7 @@ loglike <- function(beta, alpha, inv_tau, y, y_log, x){
   LL <- Lho + log_mvn
   return(list(LL=LL, Lho=Lho))
 }
+
 
 ##HMCで尺度パラメータをサンプリングするための関数
 #ガンマ回帰の対数事後分布の微分関数
@@ -192,7 +193,9 @@ dloglike_alpha <- function(alpha, beta, y, y_log, x, n, k){
   dlgamma <- (n*k)*(log(alpha) - digamma(alpha)) + sum(1 - y/lambda + log(y/lambda))   #形状パラメータの勾配ベクトル
   return(dlgamma)
 }
+sc1 <- hh*(log(alpha) - digamma(alpha)) + sum(1 - y/lambda + log(y/lambda))   #形状パラメータの勾配ベクトル
 
+digamma(15)
 
 ##アルゴリズムの設定
 R <- 5000
@@ -348,6 +351,11 @@ for(rp in 1:R){
     alpha_v[, j] <- flag*alphan + (1-flag)*alphad
   }
   
+  #lambdaを更新
+  lambda_u <- exp(u %*% alpha_u)
+  lambda_v <- exp(v %*% alpha_v)
+  
+  
   ##ユーザー特徴行列の形状パラメータをサンプリング
   #MH法の新しいパラメータを生成
   d <- as.numeric(theta_u); d_log <- log(d)
@@ -358,6 +366,7 @@ for(rp in 1:R){
   #独立MH法の対数尤度
   lognew <- loglike(alpha_u, betan, inv_tau, d, d_log, u)$Lho
   logold <- loglike(alpha_u, betad, inv_tau, d, d_log, u)$Lho 
+  
   
   #パラメータの採択を決定
   rand <- runif(1)   #一様分布から乱数を発生
