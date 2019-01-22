@@ -363,8 +363,13 @@ COV <- array(0, dim=c(x_col, x_col, R/keep))
 COV_U <- COV_V <- array(0, dim=c(k, k, R/keep))
 
 ##対数尤度の基準値
+#1パラメータモデルの対数尤度
 LLst <- sum(extraDistr::dtpois(y, mean(y), a=0, b=Inf, log=TRUE))
-lambda <- exp(as.numeric((x * betat[user_id, ]) %*% vec_x) + as.numeric((theta_ut[user_id, ] * theta_vt[item_id, ]) %*% vec))
+
+#真値での対数尤度
+beta_mu <- as.numeric((x * betat[user_id, ]) %*% vec_x)
+uv <- as.numeric((theta_ut[user_id, ] * theta_vt[item_id, ]) %*% vec)
+lambda <- exp(beta_mu + uv)
 LLbest <- sum(extraDistr::dtpois(y, lambda, a=0, b=Inf, log=TRUE))
 
 
@@ -399,7 +404,7 @@ for(rp in 1:R){
   beta <- as.matrix(flag*betan + (1-flag)*betad)
   na_beta <- is.na(beta); if(sum(na_beta) > 0){beta[na_beta] <- betad}
   mu <- as.numeric((x * beta[user_id, ]) %*% vec_x)
-
+  
   ##ユーザーのアイテムに対する行列分解のパラメータをサンプリング
   #HMCの新しいパラメータを生成
   rold <- mvrnorm(hh, rep(0, k), diag(k))   #標準多変量正規分布からパラメータを生成
@@ -431,7 +436,7 @@ for(rp in 1:R){
   na_theta_u <- is.na(theta_u); if(sum(na_theta_u) > 0){theta_u[na_theta_u] <- thetad}
   uv <- as.numeric((theta_u[user_id, ] * theta_vec) %*% vec)  
   
-
+  
   ##アイテムの行列分解のパラメータをサンプリング
   #HMCの新しいパラメータを生成
   rold <- mvrnorm(item, rep(0, k), diag(k))   #標準多変量正規分布からパラメータを生成
@@ -470,7 +475,7 @@ for(rp in 1:R){
   Cov <- out$Sigma
   alpha_mu <- u %*% alpha
   inv_Cov <- solve(Cov)
-
+  
   #ユーザーの行列分解のパラメータをサンプリング
   out_u <- rmultireg(theta_u, u, Deltabar_u, ADelta_u, nu_u, V_u)
   alpha_u <- out_u$B
@@ -515,4 +520,5 @@ for(rp in 1:R){
     print(round(rbind(diag(Cov), diag(Covt)), 3))
   }
 }
+
 
